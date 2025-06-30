@@ -1,31 +1,46 @@
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
-from ml.sentiment import analyze_sentiment, detect_toxicity
+from transformers import pipeline
+from textblob import TextBlob
+import gradio as gr
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Load Hugging Face toxicity model
+toxicity_model = pipeline("text-classification", model="unitary/toxic-bert")
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+# TextBlob sentiment analysis
+def analyze_sentiment(message):
+    polarity = TextBlob(message).sentiment.polarity
+    if polarity > 0:
+        sentiment = "Positive"
+    elif polarity < 0:
+        sentiment = "Negative"
+    else:
+        sentiment = "Neutral"
+    return sentiment
 
-@socketio.on('message')
-def handle_message(data):
-    user = data['user']
-    msg = data['message']
+# Detect toxicity
+def detect_toxicity(message):
+    result = toxicity_model(message)[0]
+    label = result["label"]
+    score = result["score"]
+    return f"{label} ({score:.2f})"
 
-    sentiment = analyze_sentiment(msg)
-    toxicity, score = detect_toxicity(msg)
+# Combined chat analysis function
+def chat_analyze(user, message):
+    sentiment = analyze_sentiment(message)
+    toxicity = detect_toxicity(message)
+    return f"👤 {user}:\n💬 {message}\n🧠 Sentiment: {sentiment}\n☣️ Toxicity: {toxicity}"
 
-    response = {
-        'user': user,
-        'message': msg,
-        'sentiment': sentiment,
-        'toxicity': toxicity,
-        'score': score
-    }
-    emit('response', response, broadcast=True)
+# Gradio UI
+demo = gr.Interface(
+    fn=chat_analyze,
+    inputs=[
+        gr.Textbox(label="User Name", placeholder="e.g. Sajeetha"),
+        gr.Textbox(label="Message", placeholder="Type a message here...")
+    ],
+    outputs="text",
+    title="🧠 Chat Analyzer",
+    description="Analyzes Sentiment & Toxicity of messages using TextBlob + Hugging Face BERT",
+    theme="monochrome"
+)
 
-if __name__ == '__main__':
-    socketio.run(app, debug=True)
+if __name__ == "__main__":
+    demo.launch()
