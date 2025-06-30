@@ -1,46 +1,43 @@
-from transformers import pipeline
-from textblob import TextBlob
 import gradio as gr
+from textblob import TextBlob
+import requests
+import os
 
-# Load Hugging Face toxicity model
-toxicity_model = pipeline("text-classification", model="unitary/toxic-bert")
+HF_TOKEN = os.getenv("HF_TOKEN")  # Your API key
 
-# TextBlob sentiment analysis
 def analyze_sentiment(message):
     polarity = TextBlob(message).sentiment.polarity
     if polarity > 0:
-        sentiment = "Positive"
+        return "Positive"
     elif polarity < 0:
-        sentiment = "Negative"
-    else:
-        sentiment = "Neutral"
-    return sentiment
+        return "Negative"
+    return "Neutral"
 
-# Detect toxicity
 def detect_toxicity(message):
-    result = toxicity_model(message)[0]
-    label = result["label"]
-    score = result["score"]
+    response = requests.post(
+        "https://api-inference.huggingface.co/models/unitary/toxic-bert",
+        headers={"Authorization": f"Bearer {HF_TOKEN}"},
+        json={"inputs": message},
+    ) 
+    r = response.json()
+    label = r[0]["label"]
+    score = r[0]["score"]
     return f"{label} ({score:.2f})"
 
-# Combined chat analysis function
-def chat_analyze(user, message):
-    sentiment = analyze_sentiment(message)
-    toxicity = detect_toxicity(message)
-    return f"👤 {user}:\n💬 {message}\n🧠 Sentiment: {sentiment}\n☣️ Toxicity: {toxicity}"
+def analyze(user, message):
+    return (
+        f"👤 {user}\n"
+        f"💬 {message}\n"
+        f"🧠 Sentiment: {analyze_sentiment(message)}\n"
+        f"☣️ Toxicity: {detect_toxicity(message)}"
+    )
 
-# Gradio UI
-demo = gr.Interface(
-    fn=chat_analyze,
-    inputs=[
-        gr.Textbox(label="User Name", placeholder="e.g. Sajeetha"),
-        gr.Textbox(label="Message", placeholder="Type a message here...")
-    ],
+iface = gr.Interface(
+    fn=analyze,
+    inputs=[gr.Textbox(label="User"), gr.Textbox(label="Message")],
     outputs="text",
-    title="🧠 Chat Analyzer",
-    description="Analyzes Sentiment & Toxicity of messages using TextBlob + Hugging Face BERT",
-    theme="monochrome"
+    title="Chat Sentiment + Toxicity Analyzer",
 )
 
 if __name__ == "__main__":
-    demo.launch()
+    iface.launch()
